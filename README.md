@@ -1,1 +1,1 @@
-This is a tooltik for ngram language model support for Laplace smoothing and good turing smoothing
+This is a repository for ngram language model support for Laplace smoothing and good turing smoothing
