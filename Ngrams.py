@@ -1,16 +1,8 @@
 # -*- coding: utf-8 -*-
 import math
 from typing import List,Dict,Set
-import numpy as np
+from smoothing import Smoothing
 
-
-
-class Smoothing(object):
-    def __init__(self):
-        pass
-
-    def update_model(self,ngram_model):
-        raise NotImplementedError
 
 class NGRAMS(object):
     def __init__(self, n=3):
@@ -123,18 +115,18 @@ class NgramNode(object):
         :param ngram:
         :return:
         '''
-        if len(ngram) == 0:
-            return
         self.count += 1
         self.sum += 1
+        if len(ngram) == 0:
+            return
         word = ngram[0]
         if word not in self.children:
             self.children[word] = NgramNode()
-        self.children[word].count += 1
+            self.children[word].symbol = word
 
+        self.children[word].add_ngram(ngram[1:])
         for word, child in self.children.items():
             child.prob = child.count / self.sum
-        self.children[word].add_ngram(ngram[1:])
 
 
     def get_ngrams_prob(self, ngrams:List[str])->float:
@@ -214,87 +206,23 @@ class NgramNode(object):
         self.add_children(child.children)
 
     def adjust_probability(self,count_array, n, prob, vsize):
-        sum = 0.
         if n == 1:
+            sum = 0.
             for symbol, child in self.children.items():
                 r = child.count
                 if r < 5:
-                    child.count = (r + 1) * count_array[r+1] / count_array[r]
-                    sum += child.count
+                    new_r = (r + 1) * count_array[r+1] / count_array[r]
+                    sum += new_r
                 else:
-                    child.count = 5
-                    sum += child.count
+                    sum += r
             for symbol, child in self.children.items():
-                child.prob = (1-prob) * child.count / sum
-            self.unseen_prob = prob / (vsize - len(self.children))
-
-
-class LaplaceSmoothing(Smoothing):
-    '''
-    Laplace smoothing method
-    '''
-    def __init__(self,alpha=0.01):
-        self.alpha = alpha
-        super(LaplaceSmoothing, self).__init__()
-
-    def update_model(self,ngram_model:NGRAMS):
-        ngram_model.root_node.add_pseudo_count(self.alpha, len(ngram_model.vocab))
-
-
-class GoodTuringSmoothing(Smoothing):
-    def __init__(self):
-        super(GoodTuringSmoothing, self).__init__()
-        pass
-
-    def update_model(self,ngram_model:NGRAMS):
-        self.set_probability(ngram_model)
-
-    def count_array(self, ngram_model:NGRAMS)->List[int]:
-        arr = []
-        ngram_model.get_count_of_counts(arr)
-        arr.extend([0])
-        return arr
-
-    def linear_regression_modify(self,count_array)->List[float]:
-        counts_modify = [0] * len(count_array)
-        r= []
-        c = []
-        for i,num in enumerate(count_array[1:], start=1):
-            if num != 0:
-                r.append(i)
-                c.append(num)
-        a = np.zeros(shape=(2,2))
-        y = np.zeros(shape=(1,2))
-        for i, num in enumerate(r):
-            xt = math.log1p(num)
-            if i == 0:
-                rt = math.log(c[i])
-            else:
-                if i == len(r) - 1:
-                    rt = math.log((1.0 * c[i])/(r[i] - r[i-1]))
+                r = child.count
+                if r < 5:
+                    new_r = (r + 1) * count_array[r+1] / count_array[r]
+                    child.prob = (1-prob) * new_r / sum
                 else:
-                    rt = math.log((2.0 * c[i]) / (r[i+1] - r[i-1]))
-            a[0,0] += 1.0
-            a[0,1] += xt
-            a[1,0] += xt
-            a[1,1] += xt * xt
-            y[0] += rt
-            y[1] += rt * xt
-        try:
-            a = np.linalg.inv(a)
-            w = np.dot(a,y)
-            w0 = w.flatten()[0]
-            w1 = w.flatten()[1]
-            for i in range(1,len(count_array)):
-                counts_modify[i] = math.exp(math.log(i) * w1 + w0)
-        except:
-            pass
-        return counts_modify
-
-    def set_probability(self,ngram_model:NGRAMS)->None:
-        origin_count_array = self.count_array(ngram_model)
-        count_array_modify = self.linear_regression_modify(origin_count_array)
-        sum = 0
-        for i in range(1,len(count_array_modify)):
-            sum += i * count_array_modify[i]
-        ngram_model.adjust_probobility(count_array_modify, count_array_modify[1] / sum)
+                    child.prob = (1-prob) * r / sum
+            self.unseen_prob = prob / (vsize - len(self.children))
+        else:
+            for symbol, child in self.children.items():
+                child.adjust_probability(count_array, n-1, prob, vsize)
